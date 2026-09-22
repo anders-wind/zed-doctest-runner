@@ -1,0 +1,21 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude
+.claude/
+
+# Zed clones and compiles the grammar here at install/reload time
+/grammars/
+
+# Download this on your own
+doctest.h
+
+# Compiled test binary from .zed/tasks.json
+/build/

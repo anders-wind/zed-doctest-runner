@@ -1,0 +1,26 @@
+name = "C++ (Doctest)"
+grammar = "cpp"
+# Deliberately no path_suffixes, modeline_aliases, or first_line_pattern: any of
+# those would make this language a candidate for .cpp/.h files in *every* Zed
+# project (tie-breaking against the native "C++" language for the same suffix is
+# undefined), which is exactly what broke unrelated C++ windows before. This
+# language is reachable only by explicit opt-in via the `file_types` setting in a
+# project's own .zed/settings.json (see README Step 1).
+line_comments = ["// ", "/// ", "//! "]
+decrease_indent_patterns = [
+  { pattern = "^\\s*\\{.*\\}?\\s*$", valid_after = ["if", "for", "while", "do", "switch", "else"] },
+  { pattern = "^\\s*else\\b", valid_after = ["if"] }
+]
+autoclose_before = ";:.,=}])>"
+brackets = [
+    { start = "{", end = "}", close = true, newline = true },
+    { start = "[", end = "]", close = true, newline = true },
+    { start = "(", end = ")", close = true, newline = true },
+    { start = "\"", end = "\"", close = true, newline = false, not_in = ["string"] },
+    { start = "`", end = "`", close = false, newline = false, not_in = ["string"] },
+    { start = "'", end = "'", close = true, newline = false, not_in = ["string", "comment"] },
+    { start = "/*", end = " */", close = true, newline = false, not_in = ["string", "comment"] },
+]
+debuggers = ["CodeLLDB", "GDB"]
+block_comment = { start = "/*", prefix = "", end = "*/", tab_size = 1 }
+documentation_comment = { start = "/*", prefix = "* ", end = "*/", tab_size = 1 }

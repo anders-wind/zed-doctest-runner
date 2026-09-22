@@ -1,0 +1,32 @@
+[
+  {
+    "label": "Build tests",
+    "command": "mkdir -p build && c++ -std=c++17 -o build/tests \"$ZED_FILE\"",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false
+  },
+  {
+    "label": "Run doctest",
+    "command": "[ -x build/tests ] || { echo 'build/tests not found - run the \"Build tests\" task first'; exit 1; }; ./build/tests --test-case=\"*$ZED_CUSTOM_test_name\" --no-colors",
+    "tags": ["cpp-doctest-test"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "reveal": "no_focus"
+  },
+  {
+    "label": "Run doctest suite",
+    "command": "[ -x build/tests ] || { echo 'build/tests not found - run the \"Build tests\" task first'; exit 1; }; ./build/tests --ts=\"*$ZED_CUSTOM_test_suite_name\" --no-colors",
+    "tags": ["cpp-doctest-suite"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "reveal": "no_focus"
+  },
+  {
+    "label": "Run all tests",
+    "command": "[ -x build/tests ] || { echo 'build/tests not found - run the \"Build tests\" task first'; exit 1; }; ./build/tests --no-colors",
+    "tags": ["cpp-main"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "reveal": "no_focus"
+  }
+]

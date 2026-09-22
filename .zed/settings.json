@@ -1,0 +1,5 @@
+{
+  "file_types": {
+    "C++ (Doctest)": ["cpp", "cc", "cxx", "hpp", "h", "hh", "hxx"]
+  }
+}

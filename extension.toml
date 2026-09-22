@@ -1,0 +1,15 @@
+id = "doctest-runner"
+name = "Doctest Runner"
+description = "Run C++ doctest test cases with one click"
+version = "0.1.0"
+schema_version = 1
+authors = ["Anders"]
+repository = "https://github.com/yourusername/zed-doctest-runner"
+
+# No [grammars.*] section: tree-sitter-cpp's compiled output always exports a C
+# symbol literally named `tree_sitter_cpp` (hardcoded in the grammar's own source),
+# so registering it here under any other name fails to link
+# ("symbol exported via --export not found: tree_sitter_cpp_doctest"). Instead,
+# languages/cpp_doctest/config.toml references Zed's already-compiled native "cpp"
+# grammar by name — nothing to build, and it's guaranteed to be the exact same
+# grammar version our query files were written against.
