@@ -12,7 +12,6 @@
     "args": [
       "--test-case=\"*${ZED_CUSTOM_test_name:}\"",
       "--test-suite=\"*${ZED_CUSTOM_test_suite_name:}\"",
-      "--no-colors",
     ],
     "tags": [
       // these are what is used to connect the task to the extension

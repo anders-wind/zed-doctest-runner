@@ -51,8 +51,7 @@ array covers all three runnable kinds (test / suite / whole file):
     "command": "./build/tests", // Put your test executable here
     "args": [
       "--test-case=\"*${ZED_CUSTOM_test_name:}\"",
-      "--test-suite=\"*${ZED_CUSTOM_test_suite_name:}\"",
-      "--no-colors"
+      "--test-suite=\"*${ZED_CUSTOM_test_suite_name:}\""
     ],
     "tags": [
       // These tags are what connects the task to the extension
