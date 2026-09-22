@@ -67,6 +67,11 @@ array covers all three runnable kinds (test / suite / whole file):
 ]
 ```
 
+## Trying It Out (this repo's own tests)
+
+To test out this repo locally, first run the "Fetch doctest.h" task, then the "Build tests" task.
+Now you should be able to successfully press the test buttons in [./tests/example_test.cpp](./tests/example_test.cpp)
+
 ## License
 
 MIT

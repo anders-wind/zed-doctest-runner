@@ -1,26 +1,33 @@
 [
   {
-    "label": "Build tests",
-    "command": "mkdir -p build && c++ -std=c++17 -o build/tests example_test.cpp",
+    "label": "Fetch doctest.h",
+    "command": "mkdir -p tests && curl -sL -o tests/doctest.h https://raw.githubusercontent.com/doctest/doctest/v2.5.3/doctest/doctest.h",
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": false,
-    "reveal": "no_focus",
+    "reveal": "no_focus"
+  },
+  {
+    "label": "Build tests",
+    "command": "mkdir -p build && c++ -std=c++17 -o build/tests tests/example_test.cpp",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "reveal": "no_focus"
   },
   {
     "label": "zed-doctest-runner: Run",
     "command": "./build/tests", // put your test executable here
     "args": [
       "--test-case=\"*${ZED_CUSTOM_test_name:}\"",
-      "--test-suite=\"*${ZED_CUSTOM_test_suite_name:}\"",
+      "--test-suite=\"*${ZED_CUSTOM_test_suite_name:}\""
     ],
     "tags": [
       // these are what is used to connect the task to the extension
       "doctest-runner-test",
       "doctest-runner-suite",
-      "doctest-runner-main",
+      "doctest-runner-main"
     ],
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": false,
-    "reveal": "no_focus",
-  },
+    "reveal": "no_focus"
+  }
 ]

@@ -14,7 +14,7 @@ Thumbs.db
 # Zed clones and compiles the grammar here at install/reload time
 /grammars/
 
-# Download this on your own
+# Run the "Fetch doctest.h" task (.zed/tasks.json) to download this
 doctest.h
 
 # Compiled test binary from .zed/tasks.json
