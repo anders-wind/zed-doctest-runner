@@ -1,6 +1,6 @@
 # Doctest Runner for Zed
 
-Run C++ doctest test cases with one click! This extension adds ▶️ play buttons in the gutter next to your TEST_CASE declarations, allowing you to run individual tests quickly.
+Run C++ doctest test cases with one click! This extension adds ▶️ play buttons in the gutter next to your `TEST_CASE`, `TEST_SUITE`, and `main()` declarations, letting you run an individual test, a whole suite, or everything.
 
 ## Features
 
@@ -38,68 +38,24 @@ Add (or extend) `.zed/settings.json` in your project root:
 }
 ```
 
-Adjust the suffix list to match whichever files actually contain your doctest
-`TEST_CASE`/`SCENARIO` macros — if you only want this for a `tests/` folder, keep
-your day-to-day C++ files off this list so they keep using Zed's regular C++ support.
-
 ### Step 2: Create `.zed/tasks.json` in your project
 
-In your C++ project root, create a `.zed/tasks.json` file with one of the configurations below:
-
-#### Option A: Direct Test Executable
-
-If you know the path to your test executable, and don't need `TEST_SUITE` support:
+In your C++ project root, create a `.zed/tasks.json` file. This is what this
+repo's own `.zed/tasks.json` uses — one build task, and one run task whose `tags`
+array covers all three runnable kinds (test / suite / whole file):
 
 ```json
 [
-  {
-    "label": "Run doctest",
-    "command": "./build/tests",
-    "args": ["--test-case=*$ZED_CUSTOM_test_name", "--no-colors"],
-    "tags": ["doctest-runner-test"]
-  }
-]
-```
-
-Replace `./build/tests` with your actual test executable path. The leading `*` on
-`--test-case` is required for `SCENARIO`-based tests — see the note under Option C.
-Keep the `label` static (don't embed `$ZED_CUSTOM_test_name` in it) — see the note
-on terminal reuse under Option C for why.
-
-#### Option B: Using CMake/CTest
-
-If you use CMake and CTest:
-
-```json
-[
-  {
-    "label": "Run doctest",
-    "command": "ctest",
-    "args": ["--test-dir", "build", "-R", "$ZED_CUSTOM_test_name", "--verbose"],
-    "tags": ["doctest-runner-test"]
-  }
-]
-```
-
-#### Option C: Separate Build Task + One Consolidated Run Task (recommended)
-
-Rebuilding on every single test click is slow, so it's worth having one dedicated
-build task. And rather than one run task per runnable kind (test / suite / whole
-file), a single run task can bind to all three tags at once — `tags` accepts an
-array — and branch internally on whichever variable actually got captured for that
-click. This is what this repo's own `.zed/tasks.json` does:
-
-```json
-[
-  {
-    "label": "zed-doctest-runner: Build tests",
-    "command": "mkdir -p build && c++ -std=c++17 -o build/tests \"$ZED_FILE\"",
-    "use_new_terminal": false
-  },
   {
     "label": "zed-doctest-runner: Run",
-    "command": "[ -x build/tests ] || { echo 'build/tests not found - run the \"zed-doctest-runner: Build tests\" task first'; exit 1; }; test_name=\"${ZED_CUSTOM_test_name:}\"; suite_name=\"${ZED_CUSTOM_test_suite_name:}\"; if [ -n \"$test_name\" ]; then ./build/tests --test-case=\"*$test_name\" --no-colors; elif [ -n \"$suite_name\" ]; then ./build/tests --ts=\"*$suite_name\" --no-colors; else ./build/tests --no-colors; fi",
+    "command": "./build/tests", // Put your test executable here
+    "args": [
+      "--test-case=\"*${ZED_CUSTOM_test_name:}\"",
+      "--test-suite=\"*${ZED_CUSTOM_test_suite_name:}\"",
+      "--no-colors"
+    ],
     "tags": [
+      // These tags are what connects the task to the extension
       "doctest-runner-test",
       "doctest-runner-suite",
       "doctest-runner-main"
@@ -110,11 +66,34 @@ click. This is what this repo's own `.zed/tasks.json` does:
 ]
 ```
 
-Run "zed-doctest-runner: Build tests" once (Cmd+Shift+P → "task: spawn") after you
-open the project and after any code change, then the play buttons stay fast — they
-just exec the existing binary. The `[ -x build/tests ] || ...` guard gives a clear
-message instead of a confusing "No such file or directory" if you click a test
-before building.
+Replace `./build/tests`/the `Build tests` command with whatever builds your own
+project (CMake, a Makefile, etc.) — only the `Run` task's shape matters for the
+play buttons to work.
+
+Run "Build tests" once (Cmd+Shift+P → "task: spawn") after you open the project
+and after any code change, then the play buttons stay fast — they just exec the
+existing binary. There's no guard for a missing binary here (a plain shell "No
+such file or directory" is what you'll see if you click before building) — this
+task doesn't have room for a pre-check the way a hand-written shell string did,
+in exchange for the args-array form below.
+
+**The `\"..\"` quotes inside each `args` string are required, not decoration.**
+Despite `args` being a JSON array (not one hand-built shell string), Zed still
+resolves the whole command through a real shell (your system shell — zsh here) —
+it isn't a direct, shell-free `exec`. The `${VAR:default}` substitution happens
+first, then the _result_ still gets parsed by that shell like any command line
+you'd type yourself. Without the surrounding quotes, an unquoted leading `*`
+(doctest's own wildcard syntax) gets interpreted as a **shell glob** instead —
+zsh in particular errors outright on a glob with no filesystem match:
+
+```
+zsh:1: no matches found: --test-case=*Using
+```
+
+instead of silently leaving it as literal text (which bash would do). The `\"..\"`
+in the JSON string puts a literal double-quote around the resolved value in the
+final command line, so the shell treats it as one opaque token and never touches
+the `*` — same reason you'd quote a wildcard in a terminal by hand.
 
 **Why the tags are namespaced (`doctest-runner-*`, not `cpp-main` etc.):** tags
 aren't scoped per-language or per-extension — Zed matches them globally against
@@ -124,37 +103,52 @@ that generic name here would risk either our doctest binary running for an
 unrelated plain-C++ project, or some other `cpp-main` task running instead of ours
 — see "How It Works" below for the full reasoning.
 
-**Why one task can serve three different runnable kinds:** `runnables.scm` tags a
-`TEST_CASE`/`SCENARIO` as `doctest-runner-test` (capturing `@test_name`), a
-`TEST_SUITE` block as `doctest-runner-suite` (capturing `@test_suite_name`), and
-`main()` as `doctest-runner-main` (capturing neither). Whichever one you click,
-only its own variable is ever populated for that specific run — the other is
-simply absent from that click's context. Referencing an absent variable directly
-(`$ZED_CUSTOM_test_name` with no fallback) would make Zed silently exclude the
-whole task for that click (per Zed's docs: "task definitions with variables which
-are not present... are filtered out"), so instead the command uses Zed's
-`${VAR:default_value}` fallback syntax with an empty default
-(`${ZED_CUSTOM_test_name:}`) to always resolve to _some_ string — that string is
-then captured into a shell variable, and an `if`/`elif`/`else` picks the right
-doctest filter (or no filter, for `main()`) based on which one is actually
-non-empty.
+**How one task ends up passing the right filter for three different runnable
+kinds, with no branching at all:** `runnables.scm` tags a `TEST_CASE`/`SCENARIO`
+as `doctest-runner-test` (capturing `@test_name`), a `TEST_SUITE` block as
+`doctest-runner-suite` (capturing `@test_suite_name`), and `main()` as
+`doctest-runner-main` (capturing neither). Whichever one you click, only its own
+variable is populated for that specific run — the other is simply absent. Rather
+than branch on which one is present, `args` passes **both** doctest filters on
+_every_ run, each independently defaulted to a bare `*` via Zed's
+`${VAR:default_value}` fallback syntax. A bare `*` matches every test/suite name
+(doctest's wildcard, confirmed empirically: `--test-case=* --test-suite=*` runs
+all 7 tests here) — and doctest combines `--test-case`/`--test-suite` as an
+**intersection**, not a fallback. So:
 
-> **This one part is unverified against a running Zed** — I've confirmed the
-> shell branching itself is correct by simulating all three resolved command
-> forms directly, but Zed's docs only demonstrate the `${VAR:default}` fallback
-> syntax with built-in variables (`$ZED_FILE`, `$ZED_SELECTED_TEXT`), not with a
-> `$ZED_CUSTOM_*` one, and I have no way to run the real Zed task-resolution
-> engine from here. If clicking `TEST_SUITE`/`main()` play buttons stops working
-> after this change (e.g. the task disappears from the picker, or errors with a
-> literal `${ZED_CUSTOM_test_name:}` in the output instead of a resolved value),
-> that means the fallback isn't supported for custom variables, and the fix is to
-> go back to three separate tasks (one per tag, no fallback needed) — the previous
-> working version of this file, before this consolidation.
+| Clicked        | `--test-case` resolves to    | `--test-suite` resolves to   | Net effect               |
+| -------------- | ---------------------------- | ---------------------------- | ------------------------ |
+| a `TEST_CASE`  | `*Addition works correctly`  | `*` (wildcard, unrestricted) | that one test, any suite |
+| a `TEST_SUITE` | `*` (wildcard, unrestricted) | `*math`                      | every test in that suite |
+| `main()`       | `*` (wildcard, unrestricted) | `*` (wildcard, unrestricted) | every test, unrestricted |
+
+Referencing `$ZED_CUSTOM_test_name` with no fallback at all would've made Zed
+silently exclude the whole task whenever that specific variable isn't present for
+a given click (per Zed's docs: "task definitions with variables which are not
+present... are filtered out") — the `${VAR:}` empty-default is what keeps the task
+available for every click, resolving to an empty string that (once combined with
+the surrounding `*` literal in the same `args` element) becomes the wildcard-only
+pattern.
+
+> `${VAR:default}` fallback substitution for `$ZED_CUSTOM_*` variables (from a
+> tree-sitter capture, not a built-in) is confirmed working in practice — a real
+> click surfaced the resolved value correctly (`--test-case=*Using...`, from
+> clicking `TEST_CASE_FIXTURE(MyFixture, "Using a fixture")`), just without the
+> quoting needed to survive the shell afterwards (see above).
 
 `TEST_SUITE("math") { TEST_CASE(...) { ... } ... }` gets its own play button (on
 the `TEST_SUITE` line itself, separate from each nested `TEST_CASE`'s own button).
 `TEST_SUITE_BEGIN`/`TEST_SUITE_END` (the alternative non-block form) aren't
 detected yet.
+
+**Why `args` instead of one `command` string, given the shell still re-parses
+everything either way:** it's mainly organization, not a quoting shortcut — each
+filter is its own array element instead of hand-assembled into one long string,
+which made it much easier to spot that the `*Using` case above was missing its
+quotes. It does _not_ mean you can skip quoting: as covered above, the resolved
+`args` still go through your system shell just like `command` does, so anything
+with shell-meaningful characters (a wildcard, a space, a `$`) still needs explicit
+`\"..\"` quoting in the JSON string, same as it would in a `command` one-liner.
 
 **Keep `label` static — don't put a variable in it.** Zed's terminal reuse
 (`use_new_terminal: false`) is keyed off the _resolved_ task, and the label is
@@ -164,12 +158,12 @@ new one per distinct thing you've run. A static label collapses every run back
 into one reused tab regardless of what was clicked — the terminal's own output
 (the echoed command, then doctest's own summary) still shows you what actually ran.
 
-The leading `*` in `--test-case="*$test_name"` matters: doctest's `SCENARIO` macro
-prefixes the real test name with `"Scenario: "` internally, so a plain (non-wildcard)
-match against the captured name silently runs zero tests for any `SCENARIO`. The `*`
-wildcard makes the filter match the captured name as a suffix, which works for both
-`TEST_CASE` (no prefix) and `SCENARIO` (`"Scenario: "` prefix) without ever matching
-an unrelated test.
+The leading `*` in each filter matters for a second reason: doctest's `SCENARIO`
+macro prefixes the real test name with `"Scenario: "` internally, so a plain
+(non-wildcard) match against the captured name would silently run zero tests for
+any `SCENARIO`. The `*` wildcard makes the filter match the captured name as a
+suffix, which works for both `TEST_CASE` (no prefix) and `SCENARIO`
+(`"Scenario: "` prefix) without ever matching an unrelated test.
 
 **On `use_new_terminal`/`reveal`:** `"use_new_terminal": false` (the default,
 listed explicitly here for clarity) makes reruns reuse the same terminal tab
@@ -180,7 +174,7 @@ to `"always"`) if you'd rather the terminal always jump into focus.
 
 ### Step 3: Use It!
 
-1. Build once: Cmd+Shift+P → "task: spawn" → "zed-doctest-runner: Build tests" (repeat after code changes)
+1. Build once: Cmd+Shift+P → "task: spawn" → "Build" (repeat after code changes)
 2. Open a C++ file with doctest test cases
 3. Look for ▶️ play buttons in the gutter next to `TEST_CASE` declarations
 4. Click the button or:
@@ -267,26 +261,45 @@ You need to create `.zed/tasks.json` with a task that has a matching tag — e.g
 ### Test doesn't run / executable not found
 
 1. **Verify test executable path** in your `.zed/tasks.json`
-2. **Build your project first**: with the Option C split-task setup, run
-   "zed-doctest-runner: Build tests" via Cmd+Shift+P → "task: spawn" (the run
-   tasks intentionally don't build — see Option C above); otherwise run whatever
-   build command your task uses
+2. **Build your project first**: run "Build" via Cmd+Shift+P → "task: spawn" (the
+   `Run` task intentionally doesn't build — see Step 2 above)
 3. **Check executable exists**: `ls build/` (or wherever your executable should be)
 4. **Use absolute paths** if relative paths don't work:
    ```json
    "command": "$ZED_WORKTREE_ROOT/build/tests"
    ```
 
-### Test runs all tests instead of just one
+### Test runs all tests instead of just one, or errors with "no matches found"
 
-Make sure your task includes the doctest filter, with the `*` prefix (needed for
-`SCENARIO` tests — see Option C above):
+**By far the most likely cause: a missing quote around the `*` wildcard.** Zed
+still runs `args`/`command` through your real system shell (see Step 2) — an
+unquoted `*` is a shell glob, not doctest's wildcard, to that shell. zsh in
+particular errors outright instead of silently ignoring it:
 
-```json
-"args": ["--test-case=*$ZED_CUSTOM_test_name"]
+```
+zsh:1: no matches found: --test-case=*Using
 ```
 
-The `$ZED_CUSTOM_test_name` variable will be replaced with the actual test name.
+Make sure the value is wrapped in escaped double-quotes inside the JSON string,
+e.g. `"--test-case=\"*$ZED_CUSTOM_test_name\""`, not `"--test-case=*$ZED_CUSTOM_test_name"`.
+
+If that's not it, check the terminal output for a literal, unresolved
+`${ZED_CUSTOM_test_name:}` or `${ZED_CUSTOM_test_suite_name:}` in the echoed
+command, instead of the actual test/suite name (or a bare `*`). That would mean
+Zed's `${VAR:default}` fallback isn't resolving that particular custom variable —
+unlikely (this exact mechanism is what surfaced the wildcard bug above in the
+first place, proving it resolves correctly), but if it happens, the fix is one
+task per tag instead, each referencing only its own always-present variable
+directly (no fallback needed since it's never absent for that task's own tag):
+
+```json
+{
+  "label": "Run doctest",
+  "command": "./build/tests",
+  "args": ["--test-case=\"*$ZED_CUSTOM_test_name\"", "--no-colors"],
+  "tags": ["doctest-runner-test"]
+}
+```
 
 ## How It Works
 
@@ -299,7 +312,7 @@ This extension uses Zed's **Runnables** system:
    to a task; the task's `label` is just display text and has no effect on this
 3. Your task configuration's `tags` array is matched against that tag — a single
    task can list multiple tags, which is how one task ends up handling all three
-   kinds of doctest runnable (see Option C above)
+   kinds of doctest runnable (see Step 2 above)
 4. Zed displays ▶️ buttons and executes the matching task when clicked. If more
    than one `tasks.json` defines a task for the same tag, precedence is: workspace
    `.zed/tasks.json` > global `~/.config/zed/tasks.json` > a language extension's

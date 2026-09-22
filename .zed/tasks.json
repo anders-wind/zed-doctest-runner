@@ -1,6 +1,6 @@
 [
   {
-    "label": "Build",
+    "label": "Build tests",
     "command": "mkdir -p build && c++ -std=c++17 -o build/tests example_test.cpp",
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": false,
@@ -8,8 +8,14 @@
   },
   {
     "label": "zed-doctest-runner: Run",
-    "command": "[ -x build/tests ] || { echo 'build/tests not found - run the \"zed-doctest-runner: Build tests\" task first'; exit 1; }; test_name=\"${ZED_CUSTOM_test_name:}\"; suite_name=\"${ZED_CUSTOM_test_suite_name:}\"; if [ -n \"$test_name\" ]; then ./build/tests --test-case=\"*$test_name\" --no-colors; elif [ -n \"$suite_name\" ]; then ./build/tests --test-suite=\"*$suite_name\" --no-colors; else ./build/tests --no-colors; fi",
+    "command": "./build/tests", // put your test executable here
+    "args": [
+      "--test-case=\"*${ZED_CUSTOM_test_name:}\"",
+      "--test-suite=\"*${ZED_CUSTOM_test_suite_name:}\"",
+      "--no-colors",
+    ],
     "tags": [
+      // these are what is used to connect the task to the extension
       "doctest-runner-test",
       "doctest-runner-suite",
       "doctest-runner-main",
