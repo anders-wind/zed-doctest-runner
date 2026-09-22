@@ -48,7 +48,7 @@ In your C++ project root, create a `.zed/tasks.json` file with one of the config
 
 #### Option A: Direct Test Executable
 
-If you know the path to your test executable:
+If you know the path to your test executable, and don't need `TEST_SUITE` support:
 
 ```json
 [
@@ -56,7 +56,7 @@ If you know the path to your test executable:
     "label": "Run doctest",
     "command": "./build/tests",
     "args": ["--test-case=*$ZED_CUSTOM_test_name", "--no-colors"],
-    "tags": ["cpp-doctest-test"]
+    "tags": ["doctest-runner-test"]
   }
 ]
 ```
@@ -76,79 +76,111 @@ If you use CMake and CTest:
     "label": "Run doctest",
     "command": "ctest",
     "args": ["--test-dir", "build", "-R", "$ZED_CUSTOM_test_name", "--verbose"],
-    "tags": ["cpp-doctest-test"]
+    "tags": ["doctest-runner-test"]
   }
 ]
 ```
 
-#### Option C: Separate Build Task + Run Tasks (recommended)
+#### Option C: Separate Build Task + One Consolidated Run Task (recommended)
 
-Rebuilding on every single test click is slow. Better to have one dedicated build
-task, and have the run tasks just run. This is what this repo's own
-`.zed/tasks.json` does:
+Rebuilding on every single test click is slow, so it's worth having one dedicated
+build task. And rather than one run task per runnable kind (test / suite / whole
+file), a single run task can bind to all three tags at once — `tags` accepts an
+array — and branch internally on whichever variable actually got captured for that
+click. This is what this repo's own `.zed/tasks.json` does:
 
 ```json
 [
   {
-    "label": "Build tests",
+    "label": "zed-doctest-runner: Build tests",
     "command": "mkdir -p build && c++ -std=c++17 -o build/tests \"$ZED_FILE\"",
     "use_new_terminal": false
   },
   {
-    "label": "Run doctest",
-    "command": "[ -x build/tests ] || { echo 'build/tests not found - run the \"Build tests\" task first'; exit 1; }; ./build/tests --test-case=\"*$ZED_CUSTOM_test_name\" --no-colors",
-    "tags": ["cpp-doctest-test"],
-    "use_new_terminal": false,
-    "reveal": "no_focus"
-  },
-  {
-    "label": "Run doctest suite",
-    "command": "[ -x build/tests ] || { echo 'build/tests not found - run the \"Build tests\" task first'; exit 1; }; ./build/tests --ts=\"*$ZED_CUSTOM_test_suite_name\" --no-colors",
-    "tags": ["cpp-doctest-suite"],
+    "label": "zed-doctest-runner: Run",
+    "command": "[ -x build/tests ] || { echo 'build/tests not found - run the \"zed-doctest-runner: Build tests\" task first'; exit 1; }; test_name=\"${ZED_CUSTOM_test_name:}\"; suite_name=\"${ZED_CUSTOM_test_suite_name:}\"; if [ -n \"$test_name\" ]; then ./build/tests --test-case=\"*$test_name\" --no-colors; elif [ -n \"$suite_name\" ]; then ./build/tests --ts=\"*$suite_name\" --no-colors; else ./build/tests --no-colors; fi",
+    "tags": [
+      "doctest-runner-test",
+      "doctest-runner-suite",
+      "doctest-runner-main"
+    ],
     "use_new_terminal": false,
     "reveal": "no_focus"
   }
 ]
 ```
 
-`TEST_SUITE("math") { TEST_CASE(...) { ... } ... }` gets its own play button (on
-the `TEST_SUITE` line itself, separate from each nested `TEST_CASE`'s own button),
-bound to the `cpp-doctest-suite` tag and doctest's `--ts`/`--test-suite` filter —
-`--test-case` won't match a suite name. `TEST_SUITE_BEGIN`/`TEST_SUITE_END` (the
-alternative non-block form) aren't detected yet.
-
-Run "Build tests" once (Cmd+Shift+P → "task: spawn" → "Build tests") after you open
-the project and after any code change, then the play buttons stay fast — they just
-exec the existing binary. The `[ -x build/tests ] || ...` guard gives a clear
+Run "zed-doctest-runner: Build tests" once (Cmd+Shift+P → "task: spawn") after you
+open the project and after any code change, then the play buttons stay fast — they
+just exec the existing binary. The `[ -x build/tests ] || ...` guard gives a clear
 message instead of a confusing "No such file or directory" if you click a test
 before building.
 
-**Keep `label` static — don't put `$ZED_CUSTOM_test_name` in it.** Zed's terminal
-reuse (`use_new_terminal: false`) is keyed off the *resolved* task, and the label
-is part of that. A label that embeds the test name makes every different test you
-click look like a different task, so instead of reusing one tab, Zed opens a new
-one per distinct test you've run. A static label (just `"Run doctest"`) collapses
-every test run back into one reused tab regardless of which test was clicked — the
-terminal's own output (the echoed command, then doctest's own summary) still shows
-you which test actually ran.
+**Why the tags are namespaced (`doctest-runner-*`, not `cpp-main` etc.):** tags
+aren't scoped per-language or per-extension — Zed matches them globally against
+every `tasks.json` on the system. Zed's own _built-in_ C++ language already uses
+the tag `cpp-main` for its default "run this file's `main()`" runnable. Reusing
+that generic name here would risk either our doctest binary running for an
+unrelated plain-C++ project, or some other `cpp-main` task running instead of ours
+— see "How It Works" below for the full reasoning.
 
-The leading `*` in `--test-case="*$ZED_CUSTOM_test_name"` matters: doctest's `SCENARIO` macro
+**Why one task can serve three different runnable kinds:** `runnables.scm` tags a
+`TEST_CASE`/`SCENARIO` as `doctest-runner-test` (capturing `@test_name`), a
+`TEST_SUITE` block as `doctest-runner-suite` (capturing `@test_suite_name`), and
+`main()` as `doctest-runner-main` (capturing neither). Whichever one you click,
+only its own variable is ever populated for that specific run — the other is
+simply absent from that click's context. Referencing an absent variable directly
+(`$ZED_CUSTOM_test_name` with no fallback) would make Zed silently exclude the
+whole task for that click (per Zed's docs: "task definitions with variables which
+are not present... are filtered out"), so instead the command uses Zed's
+`${VAR:default_value}` fallback syntax with an empty default
+(`${ZED_CUSTOM_test_name:}`) to always resolve to _some_ string — that string is
+then captured into a shell variable, and an `if`/`elif`/`else` picks the right
+doctest filter (or no filter, for `main()`) based on which one is actually
+non-empty.
+
+> **This one part is unverified against a running Zed** — I've confirmed the
+> shell branching itself is correct by simulating all three resolved command
+> forms directly, but Zed's docs only demonstrate the `${VAR:default}` fallback
+> syntax with built-in variables (`$ZED_FILE`, `$ZED_SELECTED_TEXT`), not with a
+> `$ZED_CUSTOM_*` one, and I have no way to run the real Zed task-resolution
+> engine from here. If clicking `TEST_SUITE`/`main()` play buttons stops working
+> after this change (e.g. the task disappears from the picker, or errors with a
+> literal `${ZED_CUSTOM_test_name:}` in the output instead of a resolved value),
+> that means the fallback isn't supported for custom variables, and the fix is to
+> go back to three separate tasks (one per tag, no fallback needed) — the previous
+> working version of this file, before this consolidation.
+
+`TEST_SUITE("math") { TEST_CASE(...) { ... } ... }` gets its own play button (on
+the `TEST_SUITE` line itself, separate from each nested `TEST_CASE`'s own button).
+`TEST_SUITE_BEGIN`/`TEST_SUITE_END` (the alternative non-block form) aren't
+detected yet.
+
+**Keep `label` static — don't put a variable in it.** Zed's terminal reuse
+(`use_new_terminal: false`) is keyed off the _resolved_ task, and the label is
+part of that. A label that embeds a variable would make every differently-resolved
+click look like a different task, so instead of reusing one tab, Zed would open a
+new one per distinct thing you've run. A static label collapses every run back
+into one reused tab regardless of what was clicked — the terminal's own output
+(the echoed command, then doctest's own summary) still shows you what actually ran.
+
+The leading `*` in `--test-case="*$test_name"` matters: doctest's `SCENARIO` macro
 prefixes the real test name with `"Scenario: "` internally, so a plain (non-wildcard)
-match against `$ZED_CUSTOM_test_name` silently runs zero tests for any `SCENARIO`. The `*`
+match against the captured name silently runs zero tests for any `SCENARIO`. The `*`
 wildcard makes the filter match the captured name as a suffix, which works for both
 `TEST_CASE` (no prefix) and `SCENARIO` (`"Scenario: "` prefix) without ever matching
 an unrelated test.
 
 **On `use_new_terminal`/`reveal`:** `"use_new_terminal": false` (the default,
 listed explicitly here for clarity) makes reruns reuse the same terminal tab
-instead of piling up new ones. `"reveal": "no_focus"` on the run tasks shows the
+instead of piling up new ones. `"reveal": "no_focus"` on the run task shows the
 output without yanking editor focus away every time you click a play button —
 useful once you're running tests rapidly while still coding. Drop it (or set it
 to `"always"`) if you'd rather the terminal always jump into focus.
 
 ### Step 3: Use It!
 
-1. Build once: Cmd+Shift+P → "task: spawn" → "Build tests" (repeat after code changes)
+1. Build once: Cmd+Shift+P → "task: spawn" → "zed-doctest-runner: Build tests" (repeat after code changes)
 2. Open a C++ file with doctest test cases
 3. Look for ▶️ play buttons in the gutter next to `TEST_CASE` declarations
 4. Click the button or:
@@ -202,7 +234,7 @@ TEST_SUITE("math") {  // ▶️ play button here runs every test in this suite
 - `$ZED_CUSTOM_test_name` - The test case name (e.g., "Addition works correctly").
   Note this is **not** `$ZED_SYMBOL` — see "How It Works" below for why.
 - `$ZED_CUSTOM_test_suite_name` - The `TEST_SUITE` name (e.g., "math"), captured
-  the same way as `$ZED_CUSTOM_test_name` but from the `cpp-doctest-suite` tag.
+  the same way as `$ZED_CUSTOM_test_name` but from the `doctest-runner-suite` tag.
 - `$ZED_FILE` - Full path to the current file
 - `$ZED_WORKTREE_ROOT` - Project root directory
 - `$ZED_ROW` - Current line number
@@ -228,14 +260,17 @@ TEST_SUITE("math") {  // ▶️ play button here runs every test in this suite
 
 ### "Task not found" error
 
-You need to create `.zed/tasks.json` with a task that has `"tags": ["cpp-doctest-test"]`. See Setup instructions above.
+You need to create `.zed/tasks.json` with a task that has a matching tag — e.g.
+`"tags": ["doctest-runner-test"]` for a `TEST_CASE`, `"doctest-runner-suite"` for a
+`TEST_SUITE`, `"doctest-runner-main"` for `main()`. See Setup instructions above.
 
 ### Test doesn't run / executable not found
 
 1. **Verify test executable path** in your `.zed/tasks.json`
-2. **Build your project first**: with the Option C split-task setup, run "Build
-   tests" via Cmd+Shift+P → "task: spawn" (the run tasks intentionally don't build
-   — see Option C above); otherwise run whatever build command your task uses
+2. **Build your project first**: with the Option C split-task setup, run
+   "zed-doctest-runner: Build tests" via Cmd+Shift+P → "task: spawn" (the run
+   tasks intentionally don't build — see Option C above); otherwise run whatever
+   build command your task uses
 3. **Check executable exists**: `ls build/` (or wherever your executable should be)
 4. **Use absolute paths** if relative paths don't work:
    ```json
@@ -257,10 +292,18 @@ The `$ZED_CUSTOM_test_name` variable will be replaced with the actual test name.
 
 This extension uses Zed's **Runnables** system:
 
-1. Tree-sitter queries (in `runnables.scm`) detect TEST_CASE macros in your C++ code
-2. Detected test cases are tagged with `cpp-doctest-test`
-3. Your task configuration matches this tag
-4. Zed displays ▶️ buttons and executes the task when clicked
+1. Tree-sitter queries (in `runnables.scm`) detect `TEST_CASE`/`SCENARIO`,
+   `TEST_SUITE`, and `main()` in your C++ code
+2. Each gets its own tag — `doctest-runner-test`, `doctest-runner-suite`,
+   `doctest-runner-main` — via `(#set! tag ...)`. The tag is what binds a runnable
+   to a task; the task's `label` is just display text and has no effect on this
+3. Your task configuration's `tags` array is matched against that tag — a single
+   task can list multiple tags, which is how one task ends up handling all three
+   kinds of doctest runnable (see Option C above)
+4. Zed displays ▶️ buttons and executes the matching task when clicked. If more
+   than one `tasks.json` defines a task for the same tag, precedence is: workspace
+   `.zed/tasks.json` > global `~/.config/zed/tasks.json` > a language extension's
+   own default binding
 
 ### Why `$ZED_CUSTOM_test_name`, not `$ZED_SYMBOL`
 
@@ -268,7 +311,7 @@ This extension uses Zed's **Runnables** system:
 from a separate mechanism — the outline/breadcrumb symbol Zed's outline query
 (`outline.scm`) resolves at the cursor's position. For most language test runners
 (e.g. a Rust `#[test] fn foo()`), that happens to work because the tested function
-is *also* a normal outline item, so `$ZED_SYMBOL` naturally resolves to its name.
+is _also_ a normal outline item, so `$ZED_SYMBOL` naturally resolves to its name.
 `TEST_CASE("...")` is a macro call, not a declaration `outline.scm` recognizes, so
 `$ZED_SYMBOL` is simply undefined at that position — and per Zed's docs, a task
 referencing a variable that isn't available gets silently filtered out of the task
@@ -316,7 +359,7 @@ guaranteed to be the exact grammar version these query files were written agains
 **This language also declares no `path_suffixes`, `modeline_aliases`, or
 `first_line_pattern` on purpose.** Extensions register languages globally, not
 per-project. If this language listed `.cpp`/`.h`/etc. as suffixes (like the native
-one does), it would become a second candidate for those files in *every* Zed
+one does), it would become a second candidate for those files in _every_ Zed
 project you open — and if it ever failed to load again (a bad query file, a typo),
 every `.cpp`/`.h` file everywhere would show "Unknown" again, not just this repo's.
 The only way to activate this language is the explicit `file_types` override in a
